@@ -334,7 +334,7 @@ function get_distance(policies1, policies2)
 end
 
 
-function create_transition_matrix(params, policies)
+function create_transition_matrices(params, policies)
     (; mua_grid, rho_grid) = params
     (; mu1_pol, mu2_pol) = policies
 
@@ -368,11 +368,7 @@ end
 
 
 
-function compute_ergodic(params, policies; 
-    init = 1/length(params.rho_grid) * ones(length(params.rho_grid)), 
-    max_iters = 10_000, tol = 1e-10, 
-    T = create_transition_matrix(params, policies))
-
+function compute_ergodic(T; max_iters = 10_000, tol = 1e-10, init = ones(size(T, 1))/size(T, 1)) 
     dist = Inf
     pi = init
 
@@ -387,20 +383,16 @@ function compute_ergodic(params, policies;
 end
 
 
-# Solving the dynamic game and computing the transition matrix and the ergodic distribution
-function solve_dynamic_game(params; policies_1 = Policies(params), policies_2 = Policies(params))
-    policies_1, policies_2 = iterate_fixed_policy(params; old_policies = policies_1, new_policies = policies_2)
-    optimal_policies, _ = iterate_until_convergence(params; old_policies = policies_1, new_policies = policies_2)
-
-    T, T1, T2 = create_transition_matrix(params, optimal_policies)
-    ergodic = compute_ergodic(params, optimal_policies; T)
-
-    return optimal_policies, (; ergodic, T, T1, T2)
+# Solving the dynamic game and computing the transition matrices
+function solve_dynamic_game(params; policies_1 = Policies(params), policies_2 = Policies(params), max_iters = 2_000, tol = 1e-6, gain = 0.5)
+    optimal_policies, _ = iterate_until_convergence(params; old_policies = policies_1, new_policies = policies_2, max_iters, tol, gain)
+    T, T1, T2 = create_transition_matrices(params, optimal_policies)
+    return optimal_policies, (; T, T1, T2)
 end
 
 
 # computing mean paths from an initial rho value 
-function compute_rho_paths(rho_init, params, dynamics; periods = 100)
+function compute_rho_paths(rho_init, dynamics, params; periods = 100)
     (; rho_grid) = params
 
     i = searchsortedlast(rho_grid, rho_init)
@@ -578,7 +570,7 @@ function computing_value_funcions(P0, mu0_1_grid, mu0_2_grid, mu1, mu2, P1, P2, 
     return (; V = V_grid, V1 = V1_grid, V2 = V2_grid) 
 end 
 
-function get_reference_game(params; mu1 = nothing, mu2 = nothing)
+function solve_reference_game(params; mu1 = nothing, mu2 = nothing)
     (; rho_grid) = params
 
     if mu1 === nothing || mu2 === nothing
@@ -607,52 +599,65 @@ end
 
 
 params = Parameters()
-policies_1 = Policies(params)
-policies_2 = Policies(params)
 
 @time optimal_policies, dynamics = solve_dynamic_game(params)
+reference = solve_reference_game(params)
 
-out = get_reference_game(params)
+ergodic = compute_ergodic(dynamics.T)  # unconditional
+ergodic1 = compute_ergodic(dynamics.T1)  # type 1
+ergodic2 = compute_ergodic(dynamics.T2)  # type 2
+
 
 # Plots 
 
+# P
 f1 = plot(params.rho_grid, optimal_policies.P, xlabel="rho", ylabel="Price Level P", linewidth = 2, label = "")
-plot!(f1, params.rho_grid, out.P0, xlabel="rho", ylabel="Price Level P", title="Reference Price Level vs. Reputation rho", linewidth = 2, label = "", linestyle = :dash)
+plot!(f1, params.rho_grid, reference.P0, xlabel="rho", ylabel="Price Level P", title="Reference Price Level vs. Reputation rho", linewidth = 2, label = "", linestyle = :dash)
 
 
+# mu
 f2 = plot(params.rho_grid, optimal_policies.mu1_pol, xlabel="rho", ylabel="mu", title="Optimal mu1 vs. Reputation rho", linewidth = 2, label = "" )
 plot!(f2, params.rho_grid, optimal_policies.mu2_pol, linewidth = 2, label = "")
-plot!(f2, params.rho_grid, out.mu0_1, label = "", linestyle = :dash, linewidth = 2)
-plot!(f2, params.rho_grid, out.mu0_2, label = "", linestyle = :dash, linewidth = 2)
+plot!(f2, params.rho_grid, reference.mu0_1, label = "", linestyle = :dash, linewidth = 2)
+plot!(f2, params.rho_grid, reference.mu0_2, label = "", linestyle = :dash, linewidth = 2)
 
 
+# g 
 f3 = plot(params.rho_grid, optimal_policies.g, xlabel="rho", ylabel="g", title="g Function vs. Reputation rho", linewidth = 2)
 
 
+# V1
 f4a = plot(params.rho_grid, optimal_policies.V1, xlabel="rho", ylabel="V", title="Value Function V1, V2 vs. Reputation rho", linewidth = 2, label = "V1")
-plot!(f4a, params.rho_grid, out.V1, linewidth = 2, label = "Ref V1", linestyle = :dash)
+plot!(f4a, params.rho_grid, reference.V1, linewidth = 2, label = "Ref V1", linestyle = :dash)
 
 
+# V2
 f4b = plot(params.rho_grid, optimal_policies.V2, xlabel="rho", title="Value Function V2 vs. Reputation rho", linewidth = 2, label = "V2")
-plot!(f4b, params.rho_grid, out.V2, linewidth = 2, label = "Ref V2", linestyle = :dash)
+plot!(f4b, params.rho_grid, reference.V2, linewidth = 2, label = "Ref V2", linestyle = :dash)
 
 
+# V
 f4c = plot(params.rho_grid, optimal_policies.V, xlabel="rho", ylabel="V", title="HH value Function V", linewidth = 2, label = "V")
-plot!(f4c, params.rho_grid, out.V, linewidth = 2, label = "Ref V", linestyle = :dash)
+plot!(f4c, params.rho_grid, reference.V, linewidth = 2, label = "Ref V", linestyle = :dash)
 
 
+# Ergodic distributions
 rhostep = params.rho_grid[2] - params.rho_grid[1]   # scaling the ergodic distribution by the step size in rho_grid to get a density 
-f5 = plot(params.rho_grid, dynamics.ergodic ./ rhostep, xlabel="rho", ylabel="Ergodic Distribution", title="Ergodic Distribution over Reputation rho", linewidth = 2, label = "")
+f5 = plot(params.rho_grid, ergodic ./ rhostep, xlabel="rho", ylabel="Ergodic Distribution", title="Ergodic Distribution over Reputation rho", linewidth = 2, label = "unconditional")
+plot!(f5, params.rho_grid, ergodic1 ./ rhostep, linewidth = 2, label = "type 1", linestyle = :dash)
+plot!(f5, params.rho_grid, ergodic2 ./ rhostep, linewidth = 2, label = "type 2", linestyle = :dashdot)
 
 
-paths1 = compute_rho_paths(0.5, params, dynamics; periods = 100)
+# Reputation paths
+paths1 = compute_rho_paths(0.5, dynamics, params; periods = 100)
 rho_path, rho_path_1, rho_path_2 = paths1
 f6 = plot(rho_path, xlabel="Time Periods", ylabel="Reputation rho", title="Reputation Path over Time", linewidth = 2, label = "Overall")
 plot!(f6, rho_path_1, linewidth = 2, label = "Type 1", linestyle = :dash)
 plot!(f6, rho_path_2, linewidth = 2, label = "Type 2", linestyle = :dashdot)
 
 
-paths2 = compute_rho_paths(0.2, params, dynamics; periods = 100)
+# Reputation paths from initial value 0.2
+paths2 = compute_rho_paths(0.2, dynamics, params; periods = 100)
 rho_path, rho_path_1, rho_path_2 = paths2
 f7 = plot(rho_path, xlabel="Time Periods", ylabel="Reputation rho", title="Reputation Path over Time", linewidth = 2, label = "Overall")
 plot!(f7, rho_path_1, linewidth = 2, label = "Type 1", linestyle = :dash)
@@ -669,18 +674,18 @@ end
 toexport =(
     params.rho_grid,
     optimal_policies.P,
-    out.P0,
+    reference.P0,
     optimal_policies.mu1_pol,
-    out.mu0_1,
+    reference.mu0_1,
     optimal_policies.mu2_pol,
-    out.mu0_2,
+    reference.mu0_2,
     optimal_policies.V1,
-    out.V1,
+    reference.V1,
     optimal_policies.V2,
-    out.V2,
+    reference.V2,
     optimal_policies.V,
-    out.V,
-    dynamics.ergodic ./ rhostep)
+    reference.V,
+    ergodic ./ rhostep)
 
 writedlm(joinpath("results", "rhoaxisplots.csv"), [ [a...]  for a in zip(toexport...)],  ',')
 writedlm(joinpath("results", "pathplots.csv"), [ [a...]  for a in zip(paths1..., paths2...)],  ',')
