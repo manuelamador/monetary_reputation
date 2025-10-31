@@ -682,6 +682,6 @@ toexport =(
     out.V,
     dynamics.ergodic ./ rhostep)
 
-writedlm("rhoaxisplots.csv", [ [a...]  for a in zip(toexport...)],  ',')
-writedlm("pathplots.csv", [ [a...]  for a in zip(paths1..., paths2...)],  ',')
+writedlm(joinpath("results", "rhoaxisplots.csv"), [ [a...]  for a in zip(toexport...)],  ',')
+writedlm(joinpath("results", "pathplots.csv"), [ [a...]  for a in zip(paths1..., paths2...)],  ',')
 
