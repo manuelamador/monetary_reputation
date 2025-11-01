@@ -7,7 +7,7 @@ include("model_solver.jl")
 
 params = Parameters()
 
-@time optimal_policies, dynamics = solve_dynamic_game(params)
+@time optimal_policies, dynamics, _ = solve_dynamic_game(params, verbose = true)
 reference = solve_reference_game(params)
 
 ergodic = ergodic_distribution(dynamics.T)  # unconditional

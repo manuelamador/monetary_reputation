@@ -266,17 +266,19 @@ end
 # Returns converged policies
 function iterate_until_convergence(params; max_iters = 2_000, tol = 1e-6, 
             old_policies = Policies(params), new_policies = Policies(params), 
-            gain = 0.5)
+            gain = 0.5, verbose = true)
 
     @assert 0.0 < gain ≤ 1.0
-    println("Iterating value and policy functions ...")
+    verbose && @info "Iterating value and policy functions ..."
 
-    for iter in 1:max_iters
+    iter = 1
+    diff = 0.0
+    while iter <= max_iters
         update_all!(new_policies, old_policies, params)
         optimize_policies!(new_policies, old_policies, params)
 
         diff = get_distance(new_policies, old_policies)
-        (iter % 10 == 0) && println("Iteration $iter, diff = $diff")
+        verbose && (iter % 10 == 0) && @info("    Iteration $iter, diff = $diff")
         (diff < tol) && break
 
         if gain < 1.0
@@ -287,10 +289,11 @@ function iterate_until_convergence(params; max_iters = 2_000, tol = 1e-6,
         end
 
         old_policies, new_policies = new_policies, old_policies
+        iter += 1
     end
-
-    println("... done.")
-    return new_policies, old_policies
+    iter == max_iters && @warn("Maximum iterations reached without convergence.")
+    verbose && @info "... done."
+    return new_policies, old_policies, diff
 end
 
 
@@ -343,10 +346,10 @@ end
 # Calls iterate_until_convergence to find optimal policies
 # Then computes transition matrices for reputation dynamics
 # Returns: optimal_policies, named tuple with transition matrices (T, T1, T2)
-function solve_dynamic_game(params; policies_1 = Policies(params), policies_2 = Policies(params), max_iters = 2_000, tol = 1e-6, gain = 0.5)
-    optimal_policies, _ = iterate_until_convergence(params; old_policies = policies_1, new_policies = policies_2, max_iters, tol, gain)
+function solve_dynamic_game(params; policies_1 = Policies(params), policies_2 = Policies(params), max_iters = 5_000, tol = 1e-6, gain = 0.5, verbose = true)
+    optimal_policies, _, diff = iterate_until_convergence(params; old_policies = policies_1, new_policies = policies_2, max_iters, tol, gain, verbose)
     T, T1, T2 = build_transition_matrices(params, optimal_policies)
-    return optimal_policies, (; T, T1, T2)
+    return optimal_policies, (; T, T1, T2), diff
 end
 
 
