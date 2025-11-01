@@ -31,6 +31,6 @@ To run the simulation, execute the script `main.jl`:
 include("main.jl")
 ```
 
-The script runs in a couple of minutes in a standard laptop. The script will generate all of the graphs contained in the paper and will save the series in the `results` folder.
+The script runs under a minute in a standard 2025 laptop. The script will generate all of the graphs contained in the paper, save them with the associated series in the `results` folder.
 
 
