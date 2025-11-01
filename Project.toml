@@ -1,3 +1,4 @@
 [deps]
+OhMyThreads = "67456a42-1dca-4109-a031-0a68de7e3ad5"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 Roots = "f2b01f46-fcfa-551c-844a-d8ac1e96c665"
