@@ -229,8 +229,8 @@ function optimize_policies!(new_policies, old_policies, params)
         dvalue1 = dvalue1 / ((1- beta1) * gamma1)   
         dvalue2 = dvalue2 / ((1- beta2) * gamma2) 
         
-    best_mu1 = clamp(inv_hprime(dvalue1), 0.0, 1.0)
-    best_mu2 = clamp(inv_hprime(dvalue2), 0.0, 1.0)
+        best_mu1 = clamp(inv_hprime(dvalue1), 0.0, 1.0)
+        best_mu2 = clamp(inv_hprime(dvalue2), 0.0, 1.0)
 
         new_policies.mu1_pol[rho_i] = best_mu1
         new_policies.mu2_pol[rho_i] = best_mu2
@@ -517,7 +517,6 @@ function compute_value_functions(P0, mu0_1_grid, mu0_2_grid, mu1, mu2, P1, P2, p
     V2_grid = similar(params.rho_grid)
    
     for rho_i in eachindex(params.rho_grid)
-        
         rho = params.rho_grid[rho_i]
         
         HH_val1 = 0.0 
@@ -546,7 +545,6 @@ function compute_value_functions(P0, mu0_1_grid, mu0_2_grid, mu1, mu2, P1, P2, p
 
         EV1 = HH_val1 - gamma1 * h(mu1)
         EV2 = HH_val2 - gamma2 * h(mu2)
-        
 
         EV = rho * HH_val1 + (1 - rho) * HH_val2
 
