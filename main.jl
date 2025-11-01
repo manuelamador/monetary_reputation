@@ -93,18 +93,6 @@ end
 # Solving the dynamic game
 
 
-# Computing the g
-function generate_g!(g, params, policies) 
-    (; mua_grid) = params
-
-    Threads.@threads for rho_i in eachindex(g)
-        g[rho_i] = 0.0 
-        for mua_i in eachindex(mua_grid)
-            g[rho_i] += (1 / policies.c[mua_i, rho_i]) * f_given_policies(mua_i, rho_i, params, policies)
-        end
-    end 
-end
-
 
 # The belief updating functions rhohat and rhoplus
 function rhohat(mua_i, rho_i, params, policies) 
@@ -119,6 +107,19 @@ end
 function rhoplus(mua_i, rho_i, params, policies) 
     (; delta, epsilon) = params
     return (1 - delta) * rhohat(mua_i, rho_i, params, policies) + epsilon * (1 - rhohat(mua_i, rho_i, params, policies))
+end
+
+
+# Computing the g
+function generate_g!(g, params, policies) 
+    (; mua_grid) = params
+
+    Threads.@threads for rho_i in eachindex(g)
+        g[rho_i] = 0.0 
+        for mua_i in eachindex(mua_grid)
+            g[rho_i] += (1 / policies.c[mua_i, rho_i]) * f_given_policies(mua_i, rho_i, params, policies)
+        end
+    end 
 end
 
 
@@ -172,40 +173,6 @@ function generate_c!(new_policies, params)
 end 
 
 
-# Updating the value functions given fixed policies
-# Used to construct the initial guess for the value functions
-function update_values_fixed_policy!(new_policies, old_policies, params)
-    (; mua_grid,  rho_grid, alpha, beta, beta1, beta2, gamma1, gamma2, h) = params
-    (; V, V1, V2, mu1_pol, mu2_pol) = old_policies
-    (; c) = new_policies
-    
-    Threads.@threads for rho_i in eachindex(rho_grid)
-            mu1 = mu1_pol[rho_i]
-            mu2 = mu2_pol[rho_i]
-            value1 = 0.0
-            value2 = 0.0
-            value = 0.0
-            for mua_i in eachindex(mua_grid) 
-                rho_prime = rhoplus(mua_i, rho_i, params, old_policies)
-
-                value += ((1 - beta) * (log(c[mua_i, rho_i]) - alpha * c[mua_i, rho_i]) + beta * lininterp(rho_grid, V, rho_prime)) * f_given_policies(mua_i, rho_i, params, old_policies)                
-
-                value1 += ((1 - beta1) * (log(c[mua_i, rho_i]) - alpha * c[mua_i, rho_i]) + beta1 * lininterp(rho_grid, V1, rho_prime)) * f(mua_i, mu1, params)
-
-                value2 += ((1 - beta2) * (log(c[mua_i, rho_i]) - alpha * c[mua_i, rho_i]) + beta2 * lininterp(rho_grid, V2, rho_prime)) * f(mua_i, mu2, params)
-            end 
-            value1 = value1 - (1- beta1) * gamma1 * h(mu1)  
-            value2 = value2 - (1- beta2) * gamma2 * h(mu2)
-
-        new_policies.mu1_pol[rho_i] = old_policies.mu1_pol[rho_i]
-        new_policies.mu2_pol[rho_i] = old_policies.mu2_pol[rho_i]
-        new_policies.V1[rho_i] = value1
-        new_policies.V2[rho_i] = value2
-        new_policies.V[rho_i] = value 
-    end
-end 
-
-
 # Updating all equilibrium objects given old policies (but not computing optimal mu policy)
 function update_all!(new_policies, old_policies, params)
     generate_g!(old_policies.g, params, old_policies)
@@ -225,20 +192,19 @@ function optimize_policies!(new_policies, old_policies, params)
     Threads.@threads for rho_i in eachindex(rho_grid)
      
         # using the FOC to find optimal mu for each type 
-        value1 = 0.0
-        value2 = 0.0
+        dvalue1 = 0.0
+        dvalue2 = 0.0
+        # integrating the derivative of the payoffs
         for mua_i in eachindex(mua_grid) 
             rho_prime = rhoplus(mua_i, rho_i, params, old_policies)
-
-            value1 += ((1 - beta1) * (log(c[mua_i, rho_i]) - alpha * c[mua_i, rho_i]) + beta1 * lininterp(rho_grid, V1, rho_prime)) * df(mua_i, params)
-
-            value2 += ((1 - beta2) * (log(c[mua_i, rho_i]) - alpha * c[mua_i, rho_i]) + beta2 * lininterp(rho_grid, V2, rho_prime)) * df(mua_i, params)
+            dvalue1 += ((1 - beta1) * (log(c[mua_i, rho_i]) - alpha * c[mua_i, rho_i]) + beta1 * lininterp(rho_grid, V1, rho_prime)) * df(mua_i, params)
+            dvalue2 += ((1 - beta2) * (log(c[mua_i, rho_i]) - alpha * c[mua_i, rho_i]) + beta2 * lininterp(rho_grid, V2, rho_prime)) * df(mua_i, params)
         end 
-        value1 = value1 / ((1- beta1) * gamma1)   
-        value2 = value2 / ((1- beta2) * gamma2) 
+        dvalue1 = dvalue1 / ((1- beta1) * gamma1)   
+        dvalue2 = dvalue2 / ((1- beta2) * gamma2) 
         
-        best_mu1 = clamp(hprime_inverse(value1), 0.0, 1.0)
-        best_mu2 = clamp(hprime_inverse(value2), 0.0, 1.0)
+        best_mu1 = clamp(hprime_inverse(dvalue1), 0.0, 1.0)
+        best_mu2 = clamp(hprime_inverse(dvalue2), 0.0, 1.0)
 
         new_policies.mu1_pol[rho_i] = best_mu1
         new_policies.mu2_pol[rho_i] = best_mu2
@@ -247,13 +213,11 @@ function optimize_policies!(new_policies, old_policies, params)
         value1 = 0.0
         value2 = 0.0
         value = 0.0
+        # integrating the payoffs
         for mua_i in eachindex(mua_grid) 
             rho_prime = rhoplus(mua_i, rho_i, params, new_policies)
-
             value += ((1 - beta) * (log(c[mua_i, rho_i]) - alpha * c[mua_i, rho_i]) + beta * lininterp(rho_grid, V, rho_prime)) * f_given_policies(mua_i, rho_i, params, new_policies)
-
             value1 += ((1 - beta1) * (log(c[mua_i, rho_i]) - alpha * c[mua_i, rho_i]) + beta1 * lininterp(rho_grid, V1, rho_prime)) * f(mua_i, best_mu1, params)
-
             value2 += ((1 - beta2) * (log(c[mua_i, rho_i]) - alpha * c[mua_i, rho_i]) + beta2 * lininterp(rho_grid, V2, rho_prime)) * f(mua_i, best_mu2, params)
         end 
         best_value1 = value1 - ((1- beta1) * gamma1) * h(best_mu1)  
